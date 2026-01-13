@@ -1,1 +1,3 @@
 # SoccerProcessingGame
+
+This project is a 2D top-down soccer game prototype built using Java Processing. It features smooth player movement with acceleration and friction, ball possession and shooting mechanics, goal detection, scoring, and a camera system that smoothly follows the player. The player can aim shots with the mouse, charge shot power by holding the mouse button, and score goals on a fully bounded soccer field. The project is designed as a foundation for learning game physics, camera transforms, and object-oriented game structure, and can be expanded with additional gameplay features in the future.
