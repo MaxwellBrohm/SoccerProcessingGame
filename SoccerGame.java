@@ -2,6 +2,7 @@ Player player;
 Ball ball;
 Camera camera;
 SoccerField field;
+Enemy enemy;
 
 int leftScore = 0;
 int rightScore = 0;
@@ -12,6 +13,7 @@ void setup() {
   fullScreen();
   field = new SoccerField(2000, 1200);
   player = new Player(0, 0);
+  enemy = new Enemy(300, 0);
   ball = new Ball(0, 0);
   camera = new Camera();
 }
@@ -21,6 +23,7 @@ void draw() {
 
   player.update();
   ball.update(player, field);
+  enemy.update(ball, field);
   camera.update(player);
 
   pushMatrix();
@@ -29,6 +32,7 @@ void draw() {
   field.draw();
   ball.draw();
   player.draw();
+  enemy.draw();
   player.drawArrow(ball, camera);
 
   popMatrix();
@@ -87,30 +91,33 @@ class Player {
     ellipse(x, y, 30, 30);
   }
 
-  void drawArrow(Ball ball, Camera cam) {
-    if (!ball.hasBall) return;
-
+    void drawArrow(Ball ball, Camera cam) {
+    if (ball.owner != 1) return;
+  
     float angle = atan2(
       mouseY + cam.y - y,
       mouseX + cam.x - x
     );
-
+  
     pushMatrix();
+    pushStyle();   // 🔒 save stroke/fill state
+  
     translate(x, y);
     rotate(angle);
-
+  
     stroke(150);
     strokeWeight(4);
     line(0, 0, 40, 0);
     triangle(40, 0, 25, -7, 25, 7);
-
+  
     if (ball.charging) {
       float len = map(ball.shootPower, 0, ball.maxShootPower, 0, 40);
       stroke(0, 255, 0);
       strokeWeight(6);
       line(0, 0, len, 0);
     }
-
+  
+    popStyle();    // 🔓 restore styles
     popMatrix();
   }
 }
@@ -128,6 +135,7 @@ class Ball {
 
   float shootPower = 0;
   float maxShootPower = 15;
+  int owner = 0; 
 
   Ball(float x, float y) {
     this.x = x;
@@ -135,7 +143,8 @@ class Ball {
   }
 
   void update(Player p, SoccerField field) {
-    if (hasBall) {
+    if (owner == 1) {
+      // Player has ball
       float angle = atan2(
         mouseY + camera.y - p.y,
         mouseX + camera.x - p.x
@@ -143,24 +152,32 @@ class Ball {
       x = p.x + cos(angle) * 30;
       y = p.y + sin(angle) * 30;
       vx = vy = 0;
-    } else {
+    } 
+    else if (owner == 2) {
+      x = enemy.x + 20;
+      y = enemy.y;
+      vx = vy = 0;
+    }
+
+    else {
+      // Free ball
       vx *= friction;
       vy *= friction;
       x += vx;
       y += vy;
     }
-
-    // Pickup
-    if (!hasBall && dist(x, y, p.x, p.y) < radius + 15) {
-      hasBall = true;
+  
+    // Player pickup
+    if (owner == 0 && dist(x, y, p.x, p.y) < radius + 15) {
+      owner = 1;
     }
-
-    // Charge
-    if (charging) {
+  
+    // Charging
+    if (charging && owner == 1) {
       shootPower = min(shootPower + 0.25, maxShootPower);
     }
-
-    // Goal check FIRST
+  
+    // Goal check
     int goal = field.checkGoal(x, y);
     if (goal != 0) {
       if (goal == -1) rightScore++;
@@ -169,21 +186,22 @@ class Ball {
       reset();
       return;
     }
-    
-    // Out of bounds (non-goal)
+  
     if (!field.inBounds(x, y)) {
       reset();
     }
   }
 
+
   void reset() {
     x = 0;
     y = 0;
     vx = vy = 0;
-    hasBall = false;
+    owner = 0;
     charging = false;
     shootPower = 0;
   }
+
 
   void draw() {
     fill(0, 100, 255);
@@ -256,25 +274,27 @@ class SoccerField {
 }
 
 void mousePressed() {
-  if (ball.hasBall) {
+  if (ball.owner == 1) {
     ball.charging = true;
     ball.shootPower = 0;
   }
 }
 
+
 void mouseReleased() {
-  if (ball.hasBall) {
+  if (ball.owner == 1) {
     float angle = atan2(
       mouseY + camera.y - player.y,
       mouseX + camera.x - player.x
     );
     ball.vx = cos(angle) * ball.shootPower;
     ball.vy = sin(angle) * ball.shootPower;
-    ball.hasBall = false;
+    ball.owner = 0;
     ball.charging = false;
     ball.shootPower = 0;
   }
 }
+
 
 void keyPressed() {
   if (key == 'w') player.up = true;
@@ -300,5 +320,88 @@ void drawUI() {
     textSize(64);
     text("GOAL!", width/2, height/2);
     goalTimer--;
+  }
+}
+
+class Enemy {
+  float x, y;
+  float vx, vy;
+
+  float accel = 0.35;
+  float friction = 0.9;
+  float maxSpeed = 4.5;
+
+  Enemy(float x, float y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  void update(Ball ball, SoccerField field) {
+    float tx, ty;
+
+    // Decide target
+    if (ball.owner == 2) {
+      // Enemy has ball → go to left goal
+      tx = -field.w/2 - 50;
+      ty = 0;
+    }
+    else if (ball.owner == 1) {
+      // Player has ball → chase player
+      tx = player.x;
+      ty = player.y;
+    }
+    else {
+      // Free ball
+      tx = ball.x;
+      ty = ball.y;
+    }
+
+
+    // Move toward target
+    float dx = tx - x;
+    float dy = ty - y;
+    float dist = sqrt(dx*dx + dy*dy);
+
+    if (dist > 1) {
+      dx /= dist;
+      dy /= dist;
+      vx += dx * accel;
+      vy += dy * accel;
+    } else {
+      vx *= friction;
+      vy *= friction;
+    }
+
+    // Cap speed
+    float speed = sqrt(vx*vx + vy*vy);
+    if (speed > maxSpeed) {
+      vx = vx / speed * maxSpeed;
+      vy = vy / speed * maxSpeed;
+    }
+
+    x += vx;
+    y += vy;
+    
+    // Player steals from enemy
+    if (ball.owner == 2 && dist(player.x, player.y, x, y) < 30) {
+      ball.owner = 1;
+    }
+
+    // Steal from player
+    if (ball.owner == 1 && dist(x, y, player.x, player.y) < 30) {
+      ball.owner = 2;
+    }
+    
+    // Pick up free ball
+    if (ball.owner == 0 && dist(x, y, ball.x, ball.y) < 30) {
+      ball.owner = 2;
+    }
+
+  }
+
+  void draw() {
+    fill(255, 80, 80);
+    noStroke();
+    ellipse(x, y, 30, 30);
   }
 }
